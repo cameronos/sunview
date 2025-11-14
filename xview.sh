@@ -1,58 +1,49 @@
-# This script sets up the necessary environment to build XView for Linux.
-# It should be sourced by bash or run with one of the arguments shown below.
-# If you want to use a installation directory prefix different from /, set
-# $DESTDIR accordingly. Setting $OPENWINHOME to values != /usr/openwin
-# is untested at the moment!
-# This script relies on a wrapper for imake being in the current
-# directory. The imake-wrapper appends the file $IMAKEAPPEND to the created
-# Makefile if it exists.
-# Don't try to build XView with bash 2.0 installed as /bin/sh -- it will fail
-# (due to a bug in X11R6's Imake.rules). Use bash 1.14 or 2.01 instead.
+#!/bin/bash
+# Fully patched XView build script for modern Ubuntu
+# Adds libtirpc support and parallel compilation
 
 [ $# -gt 0 ] && set -e
 
 if ! [ -d lib/libxview ]; then
-  echo Please change to XView source tree and try again
+  echo "Please change to XView source tree and try again"
   exit 1
 fi
 
-# Set the directories that will be used for installation
+# Installation directories
 [ -z "$OPENWINHOME" ] && OPENWINHOME=/usr/openwin
 [ -z "$X11DIR" ] && X11DIR=/usr/X11R6
 OWDEST=$DESTDIR$OPENWINHOME
 X11DEST=$DESTDIR$X11DIR/lib/X11/config
 
-# BUILDPREFIX can be used to compile with shared libraries not installed in
-# the standard locations
+# BUILDPREFIX can be used to compile with custom includes/libs
 if [ -n "$BUILDPREFIX" ]; then
   IMAKE_EXTRA_INCLUDES="-I$BUILDPREFIX/usr/X11R6/include -I$BUILDPREFIX/usr/include -I$BUILDPREFIX/usr/include/X11"
   IMAKE_EXTRA_LOCAL_LDFLAGS="-L$BUILDPREFIX/usr/X11R6/lib -L$BUILDPREFIX/usr/lib -L$BUILDPREFIX/lib"
 fi
 
-# --- tirpc support for modern Linux ---
+# --- Modern Linux: libtirpc support ---
 if [ -d /usr/include/tirpc ]; then
     IMAKE_EXTRA_INCLUDES="$IMAKE_EXTRA_INCLUDES -I/usr/include/tirpc"
     IMAKE_EXTRA_LOCAL_LDFLAGS="$IMAKE_EXTRA_LOCAL_LDFLAGS -ltirpc"
 fi
 
+# Generate imake append file
 cat > imake.append <<EOF
-
 # Variable-definitions appended by imake-wrapper
-  XVDESTDIR      = $OWDEST
-  EXTRA_DEFINES  = -DOPENWINHOME_DEFAULT=\"$OPENWINHOME\" -D_DEFAULT_SOURCE -DSYSV_UCONTEXT
-  CONFIGDIR      = $OPENWINHOME/lib/config
-  INCLUDES      := -I`pwd`/build/include $IMAKE_EXTRA_INCLUDES -I$OWDEST/include \$(INCLUDES)
-  LOCAL_LDFLAGS := -L`pwd`/lib/libolgx -L`pwd`/lib/libxview $IMAKE_EXTRA_LOCAL_LDFLAGS -L$OWDEST/lib \$(LOCAL_LDFLAGS)
-  MAKEOVERRIDES  =
-  CFLAGS        += -g \$(EXTRA_CFLAGS)
+XVDESTDIR      = $OWDEST
+EXTRA_DEFINES  = -DOPENWINHOME_DEFAULT=\"$OPENWINHOME\" -D_DEFAULT_SOURCE -DSYSV_UCONTEXT
+CONFIGDIR      = $OPENWINHOME/lib/config
+INCLUDES       := -I\`pwd\`/build/include $IMAKE_EXTRA_INCLUDES -I$OWDEST/include \$(INCLUDES)
+LOCAL_LDFLAGS  := -L\`pwd\`/lib/libolgx -L\`pwd\`/lib/libxview $IMAKE_EXTRA_LOCAL_LDFLAGS -L$OWDEST/lib \$(LOCAL_LDFLAGS)
+MAKEOVERRIDES  =
+CFLAGS         += -g \$(EXTRA_CFLAGS)
 # End of variable-definitions appended by imake-wrapper
-
 EOF
 
 IMAKEAPPEND="`pwd`/imake.append"
 IMAKEINCLUDE="-I`pwd`/config -I$BUILDPREFIX/usr/lib/X11/config -I$BUILDPREFIX/usr/X11R6/lib/X11/config -I/usr/lib/X11/config -I/usr/X11R6/lib/X11/config -I/usr/share/X11/config"
 
-# Make sure our wrappers are in the path
+# Ensure wrappers are in PATH
 if [ -z "$XVIEW_SETUP" ]; then
   [ -n "$BUILDPREFIX" ] && PATH="$BUILDPREFIX/bin:$PATH"
   PATH="`pwd`:$PATH"
@@ -60,20 +51,19 @@ fi
 
 PS1='\h:\w(XView-build)\$ '
 XVIEW_SETUP=1
-export OPENWINHOME X11DIR OWDEST X11DEST IMAKEINCLUDE IMAKEAPPEND \
-       PATH PS1 XVIEW_SETUP
+export OPENWINHOME X11DIR OWDEST X11DEST IMAKEINCLUDE IMAKEAPPEND PATH PS1 XVIEW_SETUP
 hash -r
 
-# patch doesn't restore the permissions, so make sure our wrapper is
-# executable
+# Make wrappers executable
 chmod a+rx imake
-# our make-wrapper is obsolete
 rm -f make
 
+# Default all target
 if [ "x$1" = xall ]; then
   set -- libs instlibs clients contrib olvwm instclients instcontrib instolvwm instfinish
 fi
 
+# Run targets
 while [ $# -gt 0 ]; do
   case "$1" in
     libs)
@@ -82,37 +72,37 @@ while [ $# -gt 0 ]; do
         imake -DUseInstalled $IMAKEINCLUDE
       ) || exit $?
       imake -DUseInstalled $IMAKEINCLUDE
-      make World
+      make -j$(nproc) World
       ;;
     instlibs)
       install -d $OWDEST $X11DEST
-      make install install.man
-      make SUBDIRS=doc install
+      make -j$(nproc) install install.man
+      make -j$(nproc) SUBDIRS=doc install
       ;;
     clients)
-      make Clients
+      make -j$(nproc) Clients
       ;;
     contrib)
-      make Contrib
+      make -j$(nproc) Contrib
       ;;
     olvwm)
       (
         cd clients/olvwm-4.1
         imake -DUseInstalled $IMAKEINCLUDE
-        make depend
-        make
+        make -j$(nproc) depend
+        make -j$(nproc)
       ) || exit $?
       ;;
     instclients)
-      make SUBDIRS=clients install install.man install.srcs
+      make -j$(nproc) SUBDIRS=clients install install.man install.srcs
       ;;
     instcontrib)
-      make SUBDIRS=contrib install install.man install.srcs
+      make -j$(nproc) SUBDIRS=contrib install install.man install.srcs
       ;;
     instolvwm)
       (
         cd clients/olvwm-4.1
-        make install install.man
+        make -j$(nproc) install install.man
       ) || exit $?
       ;;
     instfinish)
